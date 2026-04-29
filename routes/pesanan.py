@@ -125,3 +125,85 @@ def get_pesanan(id: int):
 
     finally:
         db.close()
+        
+
+@router.get("/tracking/{id}")
+def tracking_pesanan(id: int):
+    db = SessionLocal()
+
+    try:
+        # 1. pesanan
+        pesanan = db.execute(
+            text("""
+            SELECT p.*, pl.nama AS pelanggan_nama, r.nama_restoran
+            FROM pesanan p
+            JOIN pelanggan pl ON p.pelanggan_id = pl.id
+            JOIN restoran r ON p.restoran_id = r.id
+            WHERE p.id = :id
+            """),
+            {"id": id}
+        ).fetchone()
+
+        if not pesanan:
+            raise HTTPException(404, "Pesanan tidak ditemukan")
+
+        # 2. detail menu
+        detail = db.execute(
+            text("""
+            SELECT m.nama, dp.qty, dp.subtotal
+            FROM detail_pesanan dp
+            JOIN menu m ON dp.menu_id = m.id
+            WHERE dp.pesanan_id = :id
+            """),
+            {"id": id}
+        ).fetchall()
+
+        # 3. driver + pengiriman
+        pengiriman = db.execute(
+            text("""
+            SELECT d.nama AS driver_nama, d.no_hp,
+                   pg.status_pengiriman,
+                   pg.waktu_ditugaskan,
+                   pg.waktu_pickup,
+                   pg.waktu_sampai
+            FROM pengiriman pg
+            JOIN driver d ON pg.driver_id = d.id
+            WHERE pg.pesanan_id = :id
+            """),
+            {"id": id}
+        ).fetchone()
+
+        return {
+            "pesanan": dict(pesanan._mapping),
+            "menu": [dict(d._mapping) for d in detail],
+            "pengiriman": dict(pengiriman._mapping) if pengiriman else None
+        }
+
+    finally:
+        db.close()
+        
+@router.get("/pesanan")
+def get_pesanan_by_pelanggan(pelanggan_id: int):
+    db = SessionLocal()
+
+    try:
+        result = db.execute(
+            text("""
+            SELECT id, restoran_id, status, total_harga, created_at
+            FROM pesanan
+            WHERE pelanggan_id = :pelanggan_id
+            ORDER BY created_at DESC
+            """),
+            {"pelanggan_id": pelanggan_id}
+        ).fetchall()
+
+        data = [dict(r._mapping) for r in result]
+
+        return {
+            "pelanggan_id": pelanggan_id,
+            "total_pesanan": len(data),
+            "data": data
+        }
+
+    finally:
+        db.close()
